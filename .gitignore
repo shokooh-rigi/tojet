@@ -1,0 +1,16 @@
+# Virtual environment
+venv/
+
+# Byte-compiled / optimized / DLL files
+*.pyc
+__pycache__/
+
+# Environment variables
+.env
+
+# PyCharm / IntelliJ IDEA project files
+.idea/
+.idea
+# Ignore all migration files
+*/migrations/*.py
+*/migrations/__pycache__/

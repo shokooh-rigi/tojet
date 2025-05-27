@@ -1,0 +1,59 @@
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  DOCKER_IMAGE: tojet-project
+  POSTGRES_DB: tojet_db
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: your_password
+  POSTGRES_HOST: postgres_db
+  CELERY_BROKER_URL: amqp://user:password@rabbitmq:5672//
+
+services:
+  - name: postgres:latest
+    alias: postgres_db
+    command: ["postgres"]
+
+# Build Stage: Build the Docker image
+build:
+  stage: build
+  image: docker:20.10.16
+  services:
+    - docker:20.10.16-dind
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u $CI_REGISTRY_USER --password-stdin
+    - docker build -t $CI_REGISTRY/backend/tojet_backend:$CI_COMMIT_SHA .
+    - docker push $CI_REGISTRY/backend/tojet_backend:$CI_COMMIT_SHA
+    
+  only:
+    - main
+
+# Test Stage: Run Django Tests
+test:
+  stage: test
+  script:
+    - docker-compose up -d
+    - docker-compose run django python manage.py test
+  after_script:
+    - docker-compose down
+  only:
+    - merge_requests
+
+# Deploy Stage: Run Migrations and Start Services
+deploy:
+  image: dtzar/helm-kubectl:3.17.0
+  stage: deploy
+  needs:
+    - job: build
+  before_script:
+    - mkdir -p ~/.kube
+    - chmod 700 ~/.kube
+    - echo $K8S_KUBECONFIG | base64 -d > ~/.kube/config
+  script:
+    - helm upgrade -i -n tojet tojet-django ./deployment -f deployment/values-staging.yaml --set app.version="$CI_COMMIT_SHA"
+    - helm upgrade -i -n tojet tojet-celery-beat ./deployment -f deployment/values-celery-beat-staging.yaml --set app.version="$CI_COMMIT_SHA"
+    - helm upgrade -i -n tojet tojet-celery-worker ./deployment -f deployment/values-celery-worker-staging.yaml --set app.version="$CI_COMMIT_SHA"
+  only:
+    - main
